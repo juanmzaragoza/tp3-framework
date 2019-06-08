@@ -64,9 +64,11 @@ Para iniciar mininet y levantar la topología tenemos que correr el commando. En
 
     docker-compose exec mininet mn --custom /tmp/topology/example.py --topo example --mac --arp --switch ovsk --controller remote
 
-Para correr sus propias topologías, deben correr
+Para correr nuestra propia topología, deben correr
 
-    docker-compose exec mininet mn --custom /tmp/topology/<archivo de topologia> --topo <nombre de topologia>[,<parametro>] --mac --arp --switch ovsk --controller remote
+    docker-compose exec mininet mn --custom /tmp/topology/fattree-topo.py --topo fasttree-topo[,<niveles>] --mac --arp --switch ovsk --controller remote
+
+donde <niveles> es la cantidad de niveles que tendrá nuestra topología (desde el nivel `0` hasta el `<niveles>-1`).
 
 Una vez que la topología esta iniciada y la consola de mininet esta disponible para utilizar, podemos probar la conexión corriendo
 
