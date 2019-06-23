@@ -14,7 +14,7 @@ class FatTreeTopo( Topo ):
     levels = half_ports
     if levels >= 2:
 
-      n_switch = 0
+      n_switch = 1
       sw_previous_level = []
       for level in range(levels):
 
