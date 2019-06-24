@@ -152,32 +152,11 @@ class Controller:
 
       path.append([port_in, last_switch, port])
 
-    i = 0
-    for in_port, switch, exit_port in reversed(path):
-      if i == 0:
-        self.switches[switch].add_route(
-          in_port,
-          exit_port,
-          packet.src,
-          packet.dst,
-          packet.type,
-          packet.payload.srcip,
-          packet.payload.dstip,
-          packet.payload.protocol
-        )
-        self.switches[switch].add_route_with_data(
-          in_port,
-          exit_port,
-          packet.src,
-          packet.dst,
-          packet.type,
-          packet.payload.srcip,
-          packet.payload.dstip,
-          packet.payload.protocol,
-          data
-        )
-      else:
-        self.switches[switch].add_route(
+    if (packet.payload.protocol == packet.payload.ICMP_PROTOCOL):
+      in_port_first, switch_first, exit_port_first = path[-1]
+
+      for in_port, switch, exit_port in reversed(path):
+        self.switches[switch].add_route_icmp(
           in_port,
           exit_port,
           packet.src,
@@ -188,7 +167,49 @@ class Controller:
           packet.payload.protocol
         )
 
-      i += 1
+      self.switches[switch_first].add_route_icmp_with_data(
+        in_port_first,
+        exit_port_first,
+        packet.src,
+        packet.dst,
+        packet.type,
+        packet.payload.srcip,
+        packet.payload.dstip,
+        packet.payload.protocol,
+        data
+      )             
+
+    #Un paquete con protocolo UDP o TCP
+    else:
+      in_port_first, switch_first, exit_port_first = path[-1]
+
+      for in_port, switch, exit_port in reversed(path):
+        self.switches[switch].add_route(
+          in_port,
+          exit_port,
+          packet.src,
+          packet.dst,
+          packet.type,
+          packet.payload.srcip,
+          packet.payload.dstip,
+          packet.payload.protocol,
+          packet.payload.payload.srcport,
+          packet.payload.payload.dstport
+        )
+
+      self.switches[switch_first].add_route_with_data(
+        in_port_first,
+        exit_port_first,
+        packet.src,
+        packet.dst,
+        packet.type,
+        packet.payload.srcip,
+        packet.payload.dstip,
+        packet.payload.protocol,
+        packet.payload.payload.srcport,
+        packet.payload.payload.dstport,
+        data
+      )
 
 def _timer_func():
   for connection in core.openflow._connections.values():
@@ -203,10 +224,3 @@ def launch():
   core.registerNew(Controller)
 
   Timer(TIMER_SECONDS, _timer_func, recurring=True)
-  """
-  Corriendo Spanning Tree Protocol y el modulo l2_learning.
-  No queremos correrlos para la resolucion del TP.
-  Aqui lo hacemos a modo de ejemplo
-  """
-  # pox.openflow.spanning_tree.launch()
-  # pox.forwarding.l2_learning.launch()

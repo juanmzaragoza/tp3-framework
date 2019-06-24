@@ -9,9 +9,8 @@ log = core.getLogger()
 #Si se trata de enviar MAX_PACKETS_PER_TIME en menos de TIME_PACKETS
 #Al mismo destino
 #Se bloquea por BLOCK_TIME los paquetes que iban hacia dicho destino
-MAX_PACKETS_PER_TIME = 50
-TIME_PACKETS = 10
-BLOCK_TIME = 5
+MAX_PACKETS_PER_TIME = 10000
+BLOCK_TIME = 10
 
 class SwitchController:
   def __init__(self, dpid, connection, base_controller):
@@ -22,11 +21,12 @@ class SwitchController:
     self.base_controller = base_controller
     self.ports = {}
     self.hosts = {}
-    self.cost = 1
+    self.cost = 0
 
     self.last_time = time.time()
     self.packet_count = {}
 
+    self.routes_icmp = []
     self.routes = []
     self.blocked = {}
 
@@ -69,7 +69,7 @@ class SwitchController:
 
       self.connection.send(msg)    
 
-  def add_route_with_data(self, in_port, exit_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type, data):
+  def add_route_icmp_with_data(self, in_port, exit_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type, data):
     msg = of.ofp_flow_mod()
     msg.data = data
     msg.command = of.OFPFC_ADD
@@ -89,13 +89,39 @@ class SwitchController:
 
     self.connection.send(msg)
 
-  def add_route(self, in_port, exit_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type):
-    self.routes.append([in_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type, exit_port])
+  def add_route_icmp(self, in_port, exit_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type):
+    self.routes_icmp.append([in_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type, exit_port])
     # Aumentamos el costo de pasar por este switch en 1 para controlar
     # el trafico
     self.cost += 1
 
-    #log.info("Sending to switch (NODATA): %s from %s to %s port in: %s out: %s", self.dpid, eth_src, eth_dst, in_port, exit_port)
+  def add_route_with_data(self, in_port, exit_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type, port_src, port_dst, data):
+    msg = of.ofp_flow_mod()
+    msg.data = data
+    msg.command = of.OFPFC_ADD
+    msg.match.dl_dst = eth_dst
+    msg.match.dl_src = eth_src
+    msg.match.in_port = in_port
+    msg.match.dl_type = eth_type
+    msg.match.nw_src = ip_src
+    msg.match.nw_dst = ip_dst
+    msg.match.nw_proto = ip_type
+    msg.match.tp_src = port_src
+    msg.match.tp_dst = port_dst
+
+    #Quizas lo de abajo implique todo lo de arriba
+    #msg.match = of.ofp_match.from_packet(packet)
+    msg.actions.append(of.ofp_action_output(port = exit_port))
+
+    log.info("Sending to switch: %s from %s to %s port in: %s out: %s. PORTS: %s %s", self.dpid, eth_src, eth_dst, in_port, exit_port, port_src, port_dst)
+
+    self.connection.send(msg)
+
+  def add_route(self, in_port, exit_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type, port_src, port_dst):
+    self.routes.append([in_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type, exit_port, port_src, port_dst])
+    # Aumentamos el costo de pasar por este switch en 1 para controlar
+    # el trafico
+    self.cost += 1
 
   def _handle_PacketIn(self, event):
     """
@@ -118,24 +144,42 @@ class SwitchController:
     
     #log.info("Packet arrived switch: %s. From %s to %s", self.dpid, packet.src, packet.dst)
 
-    for in_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type, exit_port in self.routes:
-      if (event.port == in_port and
-        eth_src == packet.src and
-        eth_dst == packet.dst and
-        eth_type == packet.type and
-        ip_src == packet.payload.srcip and
-        ip_dst == packet.payload.dstip and
-        ip_type == packet.payload.protocol):
+    # Chequeamos si el paquete que arriba es TCP, UDP o ICMP
 
-        self.add_route_with_data(in_port, exit_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type, event.ofp)
-        return
+    if (packet.type != packet.IP_TYPE):
+      return
+
+    if (packet.payload.protocol == packet.payload.ICMP_PROTOCOL):
+      for in_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type, exit_port in self.routes_icmp:
+        if (event.port == in_port and
+          eth_src == packet.src and
+          eth_dst == packet.dst and
+          eth_type == packet.type and
+          ip_src == packet.payload.srcip and
+          ip_dst == packet.payload.dstip and
+          ip_type == packet.payload.protocol):
+
+          self.add_route_icmp_with_data(in_port, exit_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type, event.ofp)
+          return
+    #Si es UDP o TCP
+    elif (packet.payload.protocol == packet.payload.TCP_PROTOCOL or
+      packet.payload.protocol == packet.payload.UDP_PROTOCOL):
+      for in_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type, exit_port, port_src, port_dst in self.routes:        
+        if (event.port == in_port and
+          eth_src == packet.src and
+          eth_dst == packet.dst and
+          eth_type == packet.type and
+          ip_src == packet.payload.srcip and
+          ip_dst == packet.payload.dstip and
+          ip_type == packet.payload.protocol and
+          port_src == packet.payload.payload.srcport and
+          port_dst == packet.payload.payload.dstport):
+
+          self.add_route_with_data(in_port, exit_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type, port_src, port_dst, event.ofp)
+          return
 
     # Obtenemos y asignamos una ruta hacia el destino
     self.base_controller.assign_route(self.dpid, packet, event.port, event.ofp)
-
-    # Aumentamos el costo de pasar por este switch en 1 para controlar
-    # el trafico
-    #self.cost += 1
 
   def _handle_FlowStatsReceived(self, event):
     #Este metodo se llama cada TIMER_SECONDS
@@ -143,6 +187,7 @@ class SwitchController:
 
     web_bytes = 0
     web_flows = 0
+
     web_packet = {}
 
     dests = []
@@ -165,6 +210,7 @@ class SwitchController:
 
           web_flows += 1
     
+    self.cost = web_bytes - self.cost
     #Si la cantidad de paquetes recibidos en TIMER_SECONDS segundos
     #Supera un umbral de MAX_PACKETS_PER_TIME cada TIMER_SECONDS segundos
     #Bloqueamos los paquetes hacia dicho destino por un tiempo definido
@@ -178,8 +224,7 @@ class SwitchController:
       self.packet_count[dest] = web_packet[dest]
     
 
-    log.info("Web traffic from %s: %s bytes over %s flows", self.dpid, web_bytes, web_flows)
-    #log.info("FlowStatsReceived from %s: %s", dpidToStr(event.connection.dpid), stats)
+    log.info("Trafico Switch %s: %s bytes en %s flujos", self.dpid, web_bytes, web_flows)
 
   def _handle_PortStatsReceived(self, event):
     pass
