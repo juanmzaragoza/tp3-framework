@@ -5,8 +5,12 @@ import pox.forwarding.l2_learning
 from pox.lib.util import dpid_to_str
 from extensions.switch import SwitchController
 from pox.lib.recoco import Timer
+import pox.openflow.libopenflow_01 as of
 
 log = core.getLogger()
+
+#Cada cuanto se llama el timer de estadisticas
+TIMER_SECONDS = 5
 
 class Controller:
   def __init__ (self):
@@ -17,6 +21,11 @@ class Controller:
 
     # Esperando que los modulos openflow y openflow_discovery esten listos
     core.call_when_ready(self.startup, ('openflow', 'openflow_discovery'))
+
+    #core.openflow.addListenerByName("FlowStatsReceived", self._handle_FlowStatsReceived) 
+
+  def _timer_func(self):
+    log.info("Timer called")
 
   def startup(self):
     """
@@ -143,18 +152,19 @@ class Controller:
 
       path.append([port_in, last_switch, port])
 
-    if (packet.payload.protocol == packet.payload.UDP_PROTOCOL):
-        in_port, switch, exit_port = path[-1]
-        self.switches[switch].send_data(
-          packet.dst,
-          exit_port,
-          data
-        )
-        return
-
     i = 0
     for in_port, switch, exit_port in reversed(path):
       if i == 0:
+        self.switches[switch].add_route(
+          in_port,
+          exit_port,
+          packet.src,
+          packet.dst,
+          packet.type,
+          packet.payload.srcip,
+          packet.payload.dstip,
+          packet.payload.protocol
+        )
         self.switches[switch].add_route_with_data(
           in_port,
           exit_port,
@@ -180,16 +190,19 @@ class Controller:
 
       i += 1
 
+def _timer_func():
+  for connection in core.openflow._connections.values():
+    connection.send(of.ofp_stats_request(body=of.ofp_flow_stats_request()))
+    #connection.send(of.ofp_stats_request(body=of.ofp_port_stats_request()))
+
 def launch():
   # Inicializando el modulo openflow_discovery
   pox.openflow.discovery.launch()
 
   # Registrando el Controller en pox.core para que sea ejecutado
   core.registerNew(Controller)
-    
-  #core.openflow.addListenerByName("FlowStatsReceived", _handle_FlowStatsReceived) 
 
-  #Timer(5, _timer_func, recurring=True)
+  Timer(TIMER_SECONDS, _timer_func, recurring=True)
   """
   Corriendo Spanning Tree Protocol y el modulo l2_learning.
   No queremos correrlos para la resolucion del TP.
