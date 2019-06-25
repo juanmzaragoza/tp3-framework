@@ -89,7 +89,7 @@ class SwitchController:
 
     self.connection.send(msg)
 
-  def add_route_icmp(self, in_port, exit_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type):
+  def add_route_icmp(self, in_port, exit_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type):    
     self.routes_icmp.append([in_port, eth_src, eth_dst, eth_type, ip_src, ip_dst, ip_type, exit_port])
     # Aumentamos el costo de pasar por este switch en 1 para controlar
     # el trafico

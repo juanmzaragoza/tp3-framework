@@ -112,6 +112,16 @@ Otra cosa que también puede ser útil es conectarse al container para correr co
 
 Este comando abre una terminal bash, dentro del container para ejecutar lo que necesitamos.
 
+### UDP Iperf
+xhost +si:localuser:root
+
+xterm h<x> h<y>
+
+Crear un servidor UDP:
+    iperf -s -p <port> -i 1 -u
+
+Enviar paquetes desde un cliente UDP:
+    iperf -c <ip> -u -b <bandwidth> -t <time>
 
 ### Documentación
 
